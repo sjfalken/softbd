@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.15.3", path = "../bevy" }
+bevy = { version = "0.15.3"}
+avian2d = "0.2.1"
+bevy-inspector-egui = "0.30.0"
 
 
 [profile.dev]
