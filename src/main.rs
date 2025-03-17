@@ -1,7 +1,8 @@
 //! Shows how to create graphics that snap to the pixel grid by rendering to a texture in 2D
 
 use std::{ops::DerefMut, time::Duration};
-
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 // use avian2d::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::{
@@ -11,7 +12,7 @@ use bevy::{
         }, view::RenderLayers
     }, sprite::Anchor, utils::hashbrown::HashMap, window::WindowResized
 };
-
+use bevy::render::mesh::{Indices, MeshVertexAttribute, PrimitiveTopology};
 // use std::en
 
 /// In-game resolution width.
@@ -26,6 +27,8 @@ const PIXEL_PERFECT_LAYERS: RenderLayers = RenderLayers::layer(0);
 
 /// Render layers for high-resolution rendering.
 const HIGH_RES_LAYERS: RenderLayers = RenderLayers::layer(1);
+
+
 
 fn main() {
     App::new()
@@ -66,115 +69,178 @@ struct OuterCamera;
 struct FPSNode;
 
 struct SimDistanceConstraint {
-    target_simpoint: usize,
-    distance: f32
+    target_point_idx: usize,
+    rest_distance: f32
 }
 
 struct SimPoint {
-    pos: Vec3,
+    // vert: SimVertex,
+    // tri_membership: Vec<usize>,
+    x: Vec2,
+    v: Vec2,
+    m: f32,
+    
+    mesh_indices: Vec<u16>,
     distance_constr: Vec<SimDistanceConstraint>
 }
 
+
+const VERTEX_EPS: f32 = 0.005;
+#[derive(Deref, DerefMut)]
+struct SimVertex(Vec3);
+
+impl Eq for SimVertex {}
+
+impl PartialEq<Self> for SimVertex {
+    fn eq(&self, other: &Self) -> bool {
+        return (self[0] - other[0]).abs() < VERTEX_EPS
+            && (self[1] - other[1]).abs() < VERTEX_EPS
+            && (self[2] - other[2]).abs() < VERTEX_EPS;
+    }
+}
+
+// impl Ord for SimVertex {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         self.partial_cmp(other).expect("invalid comparison for vertex")
+//     }
+// }
+
+// ordered by dimension 0, then 1, then 2
+// impl PartialOrd for SimVertex {
+//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+//         if (self[0] - other[0]).abs() < VERTEX_EPS {
+//             if (self[1] - other[1]).abs() < VERTEX_EPS {
+//                 if (self[2] - other[2]).abs() < VERTEX_EPS {
+//                     Some(Ordering::Equal)
+//                 } else {
+//                     self[2].partial_cmp(&other[2])
+//                 }
+//             } else {
+//                 self[1].partial_cmp(&other[1])
+//             }
+//         } else {
+//             self[0].partial_cmp(&other[0])
+//         }
+//     }
+// }
+
 #[derive(Resource)]
 struct SimData {
-    // _template_mesh: Handle<Mesh>,
-
+    template_mesh: Mesh,
     points: Vec<SimPoint>,
-    mesh_indices: Vec<usize>
 }
 
 impl SimData {
     fn update(&mut self) {
-        for p in &mut self.points{
-            p.pos += 0.1 * Vec3::Y;
+        // p.vert.0 += 0.1 * Vec3::Y;
+        let Some(VertexAttributeValues::Float32x3(positions)) = self.template_mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) else { 
+            panic!("no position");
+        };
+        
+        
+        for (i, p) in positions.iter_mut().enumerate() {
+            // p[1] += 0.05;
+            p[0] = self.points[i].x[0];
+            p[1] = self.points[i].x[1];
         }
     }
-    fn to_vertices(&self) ->  Vec<[f32; 3]>{
-        self.points.iter().map(|p| {
-            p.pos.clone().to_array()
-        }).collect()
-    }
+    // fn to_mesh(&self) ->  &Mesh {
+    //     &self._template_mesh
+    // }
 
     fn from_mesh(m: &Mesh) -> Self {
 
-        // let eps = 0.1;
-        // let search_radius = 0.5;
+        let VertexAttributeValues::Float32x3(positions) = m.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else {
+            panic!("error: not vec3");
+        };
 
-        // compares distance between corresponding vertices
-        // let is_same_tri = |t1: Triangle3d, t2: Triangle3d| -> bool {
-        //     return 
-        //         (t1.vertices[0] - t2.vertices[0]).norm() < eps &&
-        //         (t1.vertices[1] - t2.vertices[1]).norm() < eps &&
-        //         (t1.vertices[2] - t2.vertices[2]).norm() < eps;
-        // };
+        let mut vertices = positions.clone().iter().enumerate().map(|(i, v)| {
+            (SimVertex(Vec3::new(v[0], v[1], v[2])), vec![i])
+        }).collect::<Vec<(SimVertex, Vec<usize>)>>();
 
-
-        // // compares center of mass
-        // let is_close_tri = |t1: Triangle3d, t2: Triangle3d| -> bool {
-        //     return 
-        //         ((t1.vertices[0] + t1.vertices[1] + t1.vertices[2]) / 3. - 
-        //         (t2.vertices[0] + t2.vertices[1] + t2.vertices[2]) / 3.).norm() < search_radius;
-        // };
-
-        let mut vert_idx_to_member_tri_idx: HashMap<usize, Vec<usize>> = HashMap::new();
-        // m.compute
-
-        for (k, index) in m.indices().unwrap().iter().enumerate() {
-            if vert_idx_to_member_tri_idx.contains_key(&index) {
-                vert_idx_to_member_tri_idx.get_mut(&index).unwrap().push(k / 3);
-            } else {
-                vert_idx_to_member_tri_idx.insert(index, vec![k / 3]);
+        let mut start = 0;
+        loop {
+            if start >= vertices.len() {
+                break;
             }
-        }
+            
+            let (v0, t0) = &vertices[start];
+            
 
-        let is_neighbor_vert = |v1: usize, v2: usize| -> bool {
-            if v1 == v2 { return false; }
+            let mut to_rm = Vec::new();
 
-            let member_triangles_v1 = vert_idx_to_member_tri_idx.get(&v1).unwrap();
-            let member_triangles_v2 = vert_idx_to_member_tri_idx.get(&v2).unwrap();
-
-            for t in member_triangles_v1 {
-                if member_triangles_v2.contains(t) {
-                    return true;
+            for j in (start+1)..vertices.len() {
+                if &vertices[j].0 == v0 {
+                    to_rm.push(j);
                 }
             }
 
-            return false;
-        };
-
-        let Some(VertexAttributeValues::Float32x3(positions)) = m.attribute(Mesh::ATTRIBUTE_POSITION) else {
-            panic!("position not available");
-        };
-
-        // for v in m
-
-        let mut points: Vec<SimPoint> = positions.iter().map(|p| {
-            SimPoint {pos: Vec3::new(p[0], p[1], p[2]), distance_constr: Vec::new()}
-        }).collect();
-
-        let mesh_indices: Vec<usize> = m.indices().unwrap().iter().collect();
-
-
-        for i in 0..points.len() {
-
-            for j in 0..points.len() {
-                if is_neighbor_vert(i, j) {
-                    let p1v= points.get(i).unwrap().pos.clone();
-                    let p2v= points.get(j).unwrap().pos.clone();
-                    let dist = (p2v - p1v).norm();
-
-                    let p1 = points.get_mut(i).unwrap();
-
-                    p1.distance_constr.push(SimDistanceConstraint {target_simpoint: j, distance: dist });
-                }
+            for i in (0..to_rm.len()).rev() {
+                let t = vertices[to_rm[i]].1.clone();
+                vertices[start].1.extend(t);
+                vertices.remove(to_rm[i]);
             }
 
+            start += 1;
         }
+
+        let points_with_orig_idx = vertices;
         
+        let mut template_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD);
+        let mut indices: Vec<u16> = Vec::new();
+        indices.resize(positions.len(), 0);
+        
+        let mut positions: Vec<[f32; 3]> = Vec::new();
+        
+        points_with_orig_idx.iter().enumerate().for_each(|(i, (p, orig))| {
+            positions.push(p.0.to_array());
+            for x in orig {
+                indices[*x] = i as u16;
+            }
+        });
+        template_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions));
+        template_mesh.insert_indices(Indices::U16(indices));
+        
+        // let mut tri_membership: Vec<Vec<usize>> = Vec::new();
+        let mut points = points_with_orig_idx.iter().enumerate().map(|(i, (p, orig))| {
+            // tri_membership.push(orig.iter().map(|x| x / 3).collect());
+            SimPoint {
+                x: Vec2::new(p[0], p[1]), 
+                v: Vec2::ZERO, 
+                m: 1., 
+                mesh_indices: orig.iter().map(|x| {*x as u16}).collect(),
+                distance_constr: Vec::new(),
+            }
+        }).collect::<Vec<SimPoint>>();
 
+        (0..points.len()).for_each(|i| {
+
+            (0..points.len()).for_each(|j| {
+                if i == j {
+                    return;
+                }
+                let t1: Vec<usize> = points[i].mesh_indices.iter().map(|x| *x as usize / 3).collect();
+                let t2: Vec<usize> = points[j].mesh_indices.iter().map(|x| *x as usize / 3).collect();
+                
+                for t in t1 {
+                    if t2.contains(&t) {
+                        
+                        let p1 = points[i].x;
+                        let p2 = points[j].x;
+
+                        points[i].distance_constr.push(
+                            SimDistanceConstraint { 
+                                rest_distance: (p2 - p1).norm(),
+                                target_point_idx: j,
+                            });
+                    }
+                }
+            });
+        });
+        
         Self {
             points,
-            mesh_indices 
+            template_mesh: template_mesh,
         }
     }
 }
@@ -310,7 +376,8 @@ fn setup_mesh(
     //      RenderAssetUsages::union(RenderAssetUsages::MAIN_WORLD, RenderAssetUsages::RENDER_WORLD)
     //     );
     let m = gltf_meshes.get(gltf.meshes[0].id()).unwrap().primitives[0].mesh.clone_weak();
-    let mesh_data = meshes.get(m.id()).unwrap().clone().with_computed_flat_normals();
+    let mesh_data = meshes.get(m.id()).unwrap().clone().with_removed_attribute(Mesh::ATTRIBUTE_NORMAL);
+    
 
     // let VertexAttributeValues::Float32x3(positions) = mesh_data.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else {
     //     panic!("error: not vec3");
@@ -505,24 +572,18 @@ fn update_soft(simdata: ResMut<SimData>, mut mesh_query: Query<&mut Mesh2d>, mut
     let simdata = simdata.into_inner();
 
     simdata.update();
-    // info!("polling mesh");
-    // let state = asset_server.load_state(mesh.id());
-    // info!("{state:?}");
-    // if asset_server.is_loaded_with_dependencies(mesh.id()) {
-        // info!("loaded mesh");
-    // new_mesh.clone();
+
+    let new_mesh = &simdata.template_mesh;
 
     let mesh = meshes.get_mut(mesh2d.id()).unwrap();
-    let VertexAttributeValues::Float32x3(positions) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION).unwrap() else {
-        panic!("error: not vec3");
-    };
-
-    let new_verts = simdata.to_vertices();
-
-    for i in 0..positions.len() {
-        positions[i] = new_verts[i];
-    }
     
+    let VertexAttributeValues::Float32x3(new_positions) = new_mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else {
+        panic!();
+    };
+    
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, new_positions.clone());
+    mesh.insert_indices(new_mesh.indices().unwrap().clone());
+    mesh.compute_normals();
 }
 /// Scales camera projection to fit the window (integer multiples only).
 fn fit_canvas(
