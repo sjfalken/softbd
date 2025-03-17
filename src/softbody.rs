@@ -1,7 +1,10 @@
 use avian2d::collision::{Collider, CollisionLayers};
-use avian2d::prelude::{DistanceJoint, Joint, Mass, PhysicsLayer, RigidBody, SweptCcd};
+use avian2d::dynamics::solver::xpbd::{AngularConstraint, XpbdConstraint};
+use avian2d::math::{Scalar, Vector};
+use avian2d::prelude::*;
 use bevy::asset::Assets;
 use bevy::color::Color;
+use bevy::ecs::entity::MapEntities;
 use bevy::gltf::{Gltf, GltfMesh};
 use bevy::math::{NormedVectorSpace, Vec3};
 use bevy::prelude::*;
@@ -37,10 +40,38 @@ pub enum GameLayer {
 #[derive(Component)]
 #[require(Mesh2d)]
 pub struct SoftBody;
+// 
+// #[derive(Component)]
+// struct MyConstraint {
+//     a: Entity,
+//     b: Entity,
+//     lagrange: Scalar,
+// }
+// 
+// impl MapEntities for MyConstraint {
+//     fn map_entities<M: EntityMapper>(&mut self, entity_mapper: &mut M) {
+//         self.a = entity_mapper.map_entity(self.a);
+//         self.b = entity_mapper.map_entity(self.b);
+//     }
+// }
+// 
+// impl XpbdConstraint<2> for MyConstraint {
+//     fn entities(&self) -> [Entity; 2] {
+//         [self.a, self.b]
+//     }
+// 
+//     fn solve(&mut self, bodies: [&mut RigidBodyQueryItem; 2], dt: Scalar) {
+//         todo!()
+//     }
+// 
+//     fn clear_lagrange_multipliers(&mut self) {
+//         self.lagrange = 0.;
+//     }
+// }
+// impl AngularConstraint for MyConstraint {
+//     
+// }
 
-
-#[derive(Component)]
-pub struct SoftBodyPoint;
 #[derive(Bundle)]
 pub struct SoftBodyPointBundle {
     mesh_indices: MeshIndices,
@@ -53,6 +84,7 @@ pub struct SoftBodyPointBundle {
     // spec_ccd: SpeculativeMargin,
     collision_layers: CollisionLayers,
     body: RigidBody,
+    force: ExternalForce,
     // joint: DistanceJoint,
 }
 
@@ -120,11 +152,12 @@ pub fn setup_softbody(
             indices[x] = i as u16;
         }
         SoftBodyPointBundle {
-            mass: Mass::from(1.0),
+            mass: Mass::from(1.),
             transform: Transform::from_translation(p.0),
             mesh_indices: MeshIndices(orig.iter().map(|x| {*x as u16}).collect()),
             softbody_point: SoftBodyPoint,
             body: RigidBody::Dynamic,
+            force: ExternalForce::new(Vector::ZERO).with_persistence(false),
             collider: Collider::rectangle(0.1, 0.1), // TODO fine tune
             ccd: SweptCcd::default(),
             // spec_ccd: SpeculativeMargin(100.0),
@@ -158,14 +191,6 @@ pub fn setup_joints(
     point_transforms: Query<&GlobalTransform, With<SoftBodyPoint>>,
 
 ) {
-    // let mut ec = commands.entity(softbody_entity.into_inner());
-    //
-    // ec.insert((
-    //     // MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::WHITE))),
-    //     // Transform::from_scale(Vec3::splat(10.)).with_translation(Vec3::new(0., 5., 0.)),
-    //     // HIGH_RES_LAYERS,
-    // ));
-
     let mut joints: Vec<DistanceJoint> = Vec::new();
 
     let point_entities = point_entities.iter().collect::<Vec<_>>();

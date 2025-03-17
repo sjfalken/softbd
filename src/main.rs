@@ -3,23 +3,24 @@
 mod ui;
 mod softbody;
 mod common;
+mod input;
+mod player;
+mod movement;
 
+use movement::*;
+use ui::*;
 use softbody::*;
 use common::*;
+use input::*;
+use player::*;
 
-use std::time::Duration;
-use std::collections::{BTreeSet, HashSet};
-use avian2d::dynamics::solver::SolverConfig;
 use avian2d::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::{
-    asset::{RenderAssetUsages}, core::FrameCount, ecs::world, gltf::GltfMesh, log::{Level, LogPlugin}, math::NormedVectorSpace, prelude::*, render::{
-        camera::RenderTarget, mesh::{CircleMeshBuilder, MeshVertexAttributeId, VertexAttributeValues}, render_resource::{
-            Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-        }, view::RenderLayers
-    }, sprite::Anchor, utils::hashbrown::HashMap, window::WindowResized
+    prelude::*, render::{
+        mesh::VertexAttributeValues,
+    }, window::WindowResized
 };
-use bevy::render::mesh::{Indices, PrimitiveTopology};
 
 /// In-game resolution width.
 const RES_WIDTH: u32 = 160;
@@ -32,24 +33,23 @@ fn main() {
         .add_plugins(
             DefaultPlugins
             .set(ImagePlugin::default_nearest())
-            // .set(AssetPlugin {
-            //     file_path: String::from(std::env::var("ASSETS_PATH").unwrap()), 
-            //     ..default()
-            // })
         )
         .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(PhysicsPlugins::default()
-            .with_length_unit(50.)
+            .with_length_unit(10.)
         )
         // .add_plugins(PhysicsDebugPlugin::default())
-
         .add_systems(Startup, start_loading)
-        .add_systems(Update, (update_loading).run_if(in_state(GameState::Loading)))
-        .add_systems(OnEnter(GameState::Setup), (ui::setup_ui, setup_softbody, setup_scene, setup_finish).chain())
-        .add_systems(OnEnter(GameState::InGame), (setup_joints,).chain())
-        .add_systems(Update, (fit_canvas, update_mesh, ui::update_ui, update_input).run_if(in_state(GameState::InGame)))
-        // .add_systems(Update, update_loading)
+        .add_systems(Update, 
+                     (update_loading).run_if(in_state(GameState::Loading)))
+        .add_systems(OnEnter(GameState::Setup), 
+                     (setup_ui, setup_softbody, setup_scene, setup_input, setup_player, setup_finish).chain())
+        .add_systems(OnEnter(GameState::InGame), 
+                     (setup_joints,).chain())
+        .add_systems(Update, 
+                     (fit_canvas, update_ui, update_input, update_player, update_mesh, update_movement).chain().run_if(in_state(GameState::InGame)))
         .init_state::<GameState>()
+        // .insert_resource(Gravity(Vec2::NEG_Y * 100.0))
         .run();
     
 }
@@ -58,26 +58,6 @@ fn main() {
 struct OuterCamera;
 
 
-#[derive(Resource)]
-struct PlayerInput {
-    is_jumping: bool,
-    jump_time: f32,
-}
-
-impl PlayerInput {
-    fn new() -> Self {
-        Self {
-            is_jumping: false,
-            jump_time: 0.,
-        }
-    }
-    fn do_jump(&mut self, now: f32) {
-        if (!self.is_jumping) {
-            self.is_jumping = true;
-            self.jump_time = now;
-        }
-    }
-}
 
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
@@ -143,12 +123,6 @@ fn setup_scene(
 }
 
 
-fn update_input(keyboard: Res<ButtonInput<KeyCode>>) {
-    if keyboard.just_pressed(KeyCode::Space) {
-        
-    }
-}
-
 
 // fn setup_sim(mut commands: Commands) {
 // }
@@ -197,7 +171,7 @@ fn update_loading(
     }
 
 }
-/// Scales camera projection to fit the window (integer multiples only).
+
 fn fit_canvas(
     mut resize_events: EventReader<WindowResized>,
     mut projection: Single<&mut OrthographicProjection, With<OuterCamera>>,

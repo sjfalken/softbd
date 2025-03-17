@@ -13,3 +13,6 @@ pub struct MeshIndices(pub Vec<u16>);
 pub struct VertexIndex(pub u16);
 #[derive(Resource, Deref)]
 pub struct GameScene(pub Handle<Gltf>);
+
+#[derive(Component)]
+pub struct SoftBodyPoint;
