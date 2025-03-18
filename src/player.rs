@@ -10,6 +10,14 @@ pub struct PlayerState {
 }
 
 
+#[derive(Component)]
+pub struct PlayerConfig {
+    max_jump_time: f32,
+}
+
+impl PlayerConfig {
+    pub fn max_jump_time(&self) -> f32 { self.max_jump_time }
+}
 
 pub fn setup_player(mut commands: Commands) {
     commands.spawn((
@@ -18,6 +26,9 @@ pub fn setup_player(mut commands: Commands) {
             is_jumping: false,
             jump_time: 0.0,
         },
+        PlayerConfig {
+            max_jump_time: 0.2
+        }
     ));
 }
 

@@ -6,7 +6,10 @@ mod common;
 mod input;
 mod player;
 mod movement;
+mod constr;
 
+use constr::*;
+use avian2d::dynamics::solver::schedule::SubstepSolverSet;
 use movement::*;
 use ui::*;
 use softbody::*;
@@ -14,6 +17,8 @@ use common::*;
 use input::*;
 use player::*;
 
+use avian2d::dynamics::solver::xpbd::solve_constraint;
+use avian2d::parry::simba::scalar::SupersetOf;
 use avian2d::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::{
@@ -21,6 +26,8 @@ use bevy::{
         mesh::VertexAttributeValues,
     }, window::WindowResized
 };
+use bevy::ecs::schedule::ScheduleLabel;
+// use crate::constr::{iterative_constraint_solve, TriAreaConstraint};
 
 /// In-game resolution width.
 const RES_WIDTH: u32 = 160;
@@ -28,8 +35,21 @@ const RES_WIDTH: u32 = 160;
 /// In-game resolution height.
 const RES_HEIGHT: u32 = 90;
 
+macro_rules! repeat_system {
+    ( $z:expr, $count:expr ) => {{
+        // ($z, repeat_system!($x)).chain()
+        let mut result = $z;
+        
+        for _ in 1..$count {
+            result = (result, $z).chain() 
+        }
+        
+        result
+    }};
+}
 fn main() {
-    App::new()
+    let mut app = App::new();
+    app
         .add_plugins(
             DefaultPlugins
             .set(ImagePlugin::default_nearest())
@@ -37,22 +57,80 @@ fn main() {
         .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(PhysicsPlugins::default()
             .with_length_unit(10.)
+            // .set(SolverSchedulePlugin {
+            //
+            // })
         )
         // .add_plugins(PhysicsDebugPlugin::default())
         .add_systems(Startup, start_loading)
-        .add_systems(Update, 
+        .add_systems(Update,
                      (update_loading).run_if(in_state(GameState::Loading)))
-        .add_systems(OnEnter(GameState::Setup), 
+        .add_systems(OnEnter(GameState::Setup),
                      (setup_ui, setup_softbody, setup_scene, setup_input, setup_player, setup_finish).chain())
-        .add_systems(OnEnter(GameState::InGame), 
+        .add_systems(OnEnter(GameState::InGame),
                      (setup_joints,).chain())
-        .add_systems(Update, 
+        .add_systems(Update,
                      (fit_canvas, update_ui, update_input, update_player, update_mesh, update_movement).chain().run_if(in_state(GameState::InGame)))
         .init_state::<GameState>()
-        // .insert_resource(Gravity(Vec2::NEG_Y * 100.0))
-        .run();
+        .insert_resource(Gravity(Vec2::NEG_Y * 100.0));
+        // .run();
+
+    app
+        .get_schedule_mut(SubstepSchedule)
+        .unwrap()
+        // .configure_sets(
+        //     (
+        //
+        //         )
+        // )
+        // .configure_sets(
+        //     (
+        //         Integration
+        //     ).chain()
+        // )
+        // .configure_sets(
+        //
+        // )
+        .add_systems(
+            (
+                iterative_constraint_begin::<TriAreaConstraint, 3>,
+                iterative_constraint_begin::<EdgeDistanceConstraint, 2>,
+                repeat_system!(
+                    (
+                        iterative_constraint_solve::<TriAreaConstraint, 3>,
+                        iterative_constraint_solve::<EdgeDistanceConstraint, 2>,
+                    ).chain(),
+                    1
+                )
+            ).chain().in_set(SubstepSolverSet::SolveUserConstraints)
+        )
+        ;
+
+    // app.add_schedule()
+    // app.init_schedule(IterationSchedule);
+
+
+    app.run();
     
 }
+
+
+// trait RepeatingSystem<M>: IntoSystemConfigs<M> {
+//     fn repeat(self, num: usize) -> Self {
+//     }
+// }
+
+
+
+
+#[derive(SystemSet, Clone, Hash, PartialEq, Eq, Debug)]
+enum IterationSolverSet {
+    SolveDistance,
+    SolveArea,
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, ScheduleLabel)]
+struct IterationSchedule;
 
 #[derive(Component)]
 struct OuterCamera;
@@ -94,17 +172,25 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let rect = Rectangle::new(100.0, 10.0);// .mesh().build();
+    let rect = Rectangle::new(160.0, 10.0);// .mesh().build();
     let circle = Circle::new(5.0);// .mesh().build();
-    commands.spawn((
-        Transform::from_translation(-30. * Vec3::Y),
-        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::linear_rgb(1.0, 0., 0.)))),
-        RigidBody::Static,
-        rect.collider(),
-        Mesh2d(meshes.add(rect)),
-        CollisionLayers::new(GameLayer::default(), GameLayer::all_bits()),
-        // Collider::rectangle(100., 10.),
-    ));
+    
+    let bot = Transform::from_translation(-40. * Vec3::Y);
+    let top = Transform::from_translation(40. * Vec3::Y);
+    let left = Transform::from_translation(-75.* Vec3::X).with_rotation(Quat::from(Rotation::degrees(90.)));
+    let right = Transform::from_translation(75.* Vec3::X).with_rotation(Quat::from(Rotation::degrees(90.)));
+
+    for t in [bot, top, left, right] {
+        commands.spawn((
+            t,
+            MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::linear_rgb(1.0, 0., 0.)))),
+            RigidBody::Static,
+            rect.collider(),
+            Mesh2d(meshes.add(rect)),
+            CollisionLayers::new(GameLayer::default(), GameLayer::all_bits()),
+            // Collider::rectangle(100., 10.),
+        ));
+    }
     commands.spawn((
         Transform::from_translation(Vec3::new(40.0, 10.0, 0.0)),
         MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::linear_rgb(1.0, 0., 0.)))),

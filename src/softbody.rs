@@ -1,5 +1,5 @@
 use avian2d::collision::{Collider, CollisionLayers};
-use avian2d::dynamics::solver::xpbd::{AngularConstraint, XpbdConstraint};
+use avian2d::dynamics::solver::xpbd::{AngularConstraint, PositionConstraint, XpbdConstraint};
 use avian2d::math::{Scalar, Vector};
 use avian2d::prelude::*;
 use bevy::asset::Assets;
@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Indices, VertexAttributeValues};
 
 use crate::common::*;
-
+use crate::constr::{EdgeDistanceConstraint, TriAreaConstraint};
 // use crate::{GameLayer, MeshIndices, MyScene, SimVertex,  VertexIndex};
 
 
@@ -40,53 +40,11 @@ pub enum GameLayer {
 #[derive(Component)]
 #[require(Mesh2d)]
 pub struct SoftBody;
-// 
-// #[derive(Component)]
-// struct MyConstraint {
-//     a: Entity,
-//     b: Entity,
-//     lagrange: Scalar,
-// }
-// 
-// impl MapEntities for MyConstraint {
-//     fn map_entities<M: EntityMapper>(&mut self, entity_mapper: &mut M) {
-//         self.a = entity_mapper.map_entity(self.a);
-//         self.b = entity_mapper.map_entity(self.b);
-//     }
-// }
-// 
-// impl XpbdConstraint<2> for MyConstraint {
-//     fn entities(&self) -> [Entity; 2] {
-//         [self.a, self.b]
-//     }
-// 
-//     fn solve(&mut self, bodies: [&mut RigidBodyQueryItem; 2], dt: Scalar) {
-//         todo!()
-//     }
-// 
-//     fn clear_lagrange_multipliers(&mut self) {
-//         self.lagrange = 0.;
-//     }
-// }
-// impl AngularConstraint for MyConstraint {
-//     
-// }
 
-#[derive(Bundle)]
-pub struct SoftBodyPointBundle {
-    mesh_indices: MeshIndices,
-    vertex_index: VertexIndex,
-    transform: Transform,
-    mass: Mass,
-    softbody_point: SoftBodyPoint,
-    collider: Collider,
-    ccd: SweptCcd,
-    // spec_ccd: SpeculativeMargin,
-    collision_layers: CollisionLayers,
-    body: RigidBody,
-    force: ExternalForce,
-    // joint: DistanceJoint,
-}
+#[derive(Component, Deref, DerefMut)]
+pub struct TriangleList(Vec<(Entity, Entity, Entity)>);
+
+
 
 pub fn setup_softbody(
     mut commands: Commands,
@@ -151,31 +109,44 @@ pub fn setup_softbody(
         for &x in orig.iter() {
             indices[x] = i as u16;
         }
-        SoftBodyPointBundle {
-            mass: Mass::from(1.),
-            transform: Transform::from_translation(p.0),
-            mesh_indices: MeshIndices(orig.iter().map(|x| {*x as u16}).collect()),
-            softbody_point: SoftBodyPoint,
-            body: RigidBody::Dynamic,
-            force: ExternalForce::new(Vector::ZERO).with_persistence(false),
-            collider: Collider::rectangle(0.1, 0.1), // TODO fine tune
-            ccd: SweptCcd::default(),
+        (
+            Mass::from(1.),
+            Transform::from_translation(p.0),
+            MeshIndices(orig.iter().map(|x| {*x as u16}).collect()),
+            // MeshTriangleNumber()
+            SoftBodyPoint,
+            RigidBody::Dynamic,
+            ExternalForce::new(Vector::ZERO).with_persistence(false),
+            Collider::circle(0.1), // TODO fine tune
+            SweptCcd::default(),
             // spec_ccd: SpeculativeMargin(100.0),
-            collision_layers: CollisionLayers::new(GameLayer::SoftBodyPointLayer, GameLayer::Default),
-            vertex_index: VertexIndex(i as u16),
-        }
-    }).collect::<Vec<SoftBodyPointBundle>>();
-
-    m.remove_attribute(Mesh::ATTRIBUTE_POSITION);
-    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, points_with_orig_idx.iter().map(|(a, b)| {a.0.to_array()}).collect::<Vec<[f32;3]>>());
-    m.insert_indices(Indices::U16(indices));
+            CollisionLayers::new(GameLayer::SoftBodyPointLayer, GameLayer::Default),
+            LockedAxes::ROTATION_LOCKED,
+            VertexIndex(i as u16),
+        )
+    }).collect::<Vec<_>>();
     let point_entities = points.into_iter().map(|p|{
         commands.spawn(p).id()
     }).collect::<Vec<Entity>>();
 
+    let mut triangles = Vec::new();
+    
+    for t in 0..(indices.len() / 3) {
+        triangles.push((
+                point_entities[indices[t*3] as usize], 
+                point_entities[indices[t*3+1] as usize], 
+                point_entities[indices[t*3+2] as usize]
+            ));
+    }
+    
+    m.remove_attribute(Mesh::ATTRIBUTE_POSITION);
+    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, points_with_orig_idx.iter().map(|(a, _)| {a.0.to_array()}).collect::<Vec<[f32;3]>>());
+    m.insert_indices(Indices::U16(indices));
+    
     let mut b = commands.spawn((
         Mesh2d(meshes.add(m)),
         SoftBody,
+        TriangleList(triangles),
         MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::WHITE))),
         Transform::from_scale(Vec3::splat(10.)).with_translation(Vec3::new(0., 5., 0.)),
     ));
@@ -189,17 +160,41 @@ pub fn setup_joints(
     point_entities: Query<Entity, With<SoftBodyPoint>>,
     point_mesh_indices: Query<&MeshIndices, With<SoftBodyPoint>>,
     point_transforms: Query<&GlobalTransform, With<SoftBodyPoint>>,
-
+    softbody_triangles: Single<&TriangleList, With<SoftBody>>,
+    // meshes: Res<Assets<Mesh>>,
 ) {
-    let mut joints: Vec<DistanceJoint> = Vec::new();
-
+    let mut joints: Vec<TriAreaConstraint> = Vec::new();
+    
+    let vto2d = |v: Vec3| {
+        Vec2::new(v.x, v.y)
+    };
+    
+    let triangles = softbody_triangles.iter().collect::<Vec<_>>();
+    for i in 0..triangles.len() {
+        let (e1, e2, e3) = triangles[i];
+        
+        let p1 = point_transforms.get(*e1).unwrap().translation();
+        let p2 = point_transforms.get(*e2).unwrap().translation();
+        let p3 = point_transforms.get(*e3).unwrap().translation();
+        
+        let p1 = vto2d(p1);
+        let p2 = vto2d(p2);
+        let p3 = vto2d(p3);
+        
+        let area = TriAreaConstraint::compute_signed_area(p1, p2, p3);
+        
+        joints.push(TriAreaConstraint::new([*e1, *e2, *e3], area, 0.05));
+    }
+    
+    commands.spawn_batch(joints);
+    
+    let mut joints: Vec<EdgeDistanceConstraint> = Vec::new();
+    
     let point_entities = point_entities.iter().collect::<Vec<_>>();
-    (0..point_entities.len()).for_each(|i| {
+    
+    for i in 0..point_entities.len() {
+        for j in (i+1)..point_entities.iter().len() {
 
-        ((i+1)..point_entities.len()).for_each(|j| {
-            // if i == j {
-            //     return;
-            // }
             let t1: Vec<usize> = point_mesh_indices.get(point_entities[i]).unwrap().iter().map(|x| *x as usize / 3).collect();
             let t2: Vec<usize> = point_mesh_indices.get(point_entities[j]).unwrap().iter().map(|x| *x as usize / 3).collect();
 
@@ -210,23 +205,17 @@ pub fn setup_joints(
                     let p2 = point_transforms.get(point_entities[j]).unwrap().translation();
                     // let p2 = point_transforms.get(point_entities[j]).unwrap().
                     let rest = (p2 - p1).norm();
-                    // info!("{p1:?} {p2:?}");
                     joints.push(
-                        DistanceJoint::new(point_entities[i], point_entities[j])
+                        EdgeDistanceConstraint::new(point_entities[i], point_entities[j])
                             .with_rest_length(rest)
-                            .with_angular_velocity_damping(1000.)
-                            // .with_limits()
-                            // .with_limits(rest *0.9, rest*1.1)
-                            .with_compliance(0.0001)
+                            .with_compliance(0.00001)
                     );
 
                     // let last = joints[joints.len() - 1];
                 }
             }
-        });
-    });
-
+        }
+    }
 
     commands.spawn_batch(joints);
-
 }
