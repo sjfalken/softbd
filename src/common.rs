@@ -10,8 +10,6 @@ pub struct MeshIndices(pub Vec<u16>);
 #[derive(Component, Deref, DerefMut)]
 pub struct VertexIndex(pub u16);
 
-// #[derive(Component, Deref, DerefMut)]
-// pub struct MeshTriangleIndex(pub u16);
 #[derive(Resource, Deref)]
 pub struct GameScene(pub Handle<Gltf>);
 

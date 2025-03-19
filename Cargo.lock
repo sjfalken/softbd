@@ -3116,6 +3116,7 @@ dependencies = [
  "avian2d",
  "bevy",
  "bevy-inspector-egui",
+ "wasm-bindgen",
 ]
 
 [[package]]

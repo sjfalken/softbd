@@ -50,7 +50,7 @@ pub fn setup_ui(mut commands: Commands) {
                     Text::new("0"),
                     FPSNode,
                     TextFont {
-                        font_size: 20.0,
+                        font_size: 1.0, // will be scaled later
                         ..default()
                     },
                     TextColor::WHITE,

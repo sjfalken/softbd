@@ -11,8 +11,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Indices, VertexAttributeValues};
 
 use crate::common::*;
-use crate::constr::{EdgeDistanceConstraint, TriAreaConstraint};
-// use crate::{GameLayer, MeshIndices, MyScene, SimVertex,  VertexIndex};
+use crate::constr::TriAreaConstraint;
 
 
 const VERTEX_EPS: f32 = 0.005;
@@ -39,7 +38,9 @@ pub enum GameLayer {
 
 #[derive(Component)]
 #[require(Mesh2d)]
-pub struct SoftBody;
+pub struct SoftBody {
+    vel: Vector
+}
 
 #[derive(Component, Deref, DerefMut)]
 pub struct TriangleList(Vec<(Entity, Entity, Entity)>);
@@ -101,23 +102,20 @@ pub fn setup_softbody(
     }
 
     let points_with_orig_idx = vertices;
-    // template_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, VertexAttributeValues::Float32x3(positions));
-    // template_mesh.insert_indices(Indices::U16(indices));
 
-    // let mut tri_membership: Vec<Vec<usize>> = Vec::new();
     let points = points_with_orig_idx.iter().enumerate().map(|(i, (p, orig))| {
         for &x in orig.iter() {
             indices[x] = i as u16;
         }
         (
-            Mass::from(1.),
             Transform::from_translation(p.0),
             MeshIndices(orig.iter().map(|x| {*x as u16}).collect()),
             // MeshTriangleNumber()
             SoftBodyPoint,
             RigidBody::Dynamic,
-            ExternalForce::new(Vector::ZERO).with_persistence(false),
+            ExternalImpulse::new(Vector::ZERO),
             Collider::circle(0.1), // TODO fine tune
+            // ColliderDensity(1.0),
             SweptCcd::default(),
             // spec_ccd: SpeculativeMargin(100.0),
             CollisionLayers::new(GameLayer::SoftBodyPointLayer, GameLayer::Default),
@@ -144,8 +142,10 @@ pub fn setup_softbody(
     m.insert_indices(Indices::U16(indices));
     
     let mut b = commands.spawn((
+        // Mass::from(100.),
         Mesh2d(meshes.add(m)),
-        SoftBody,
+        SoftBody {vel: Vector::ZERO},
+        // RigidBody::Dynamic,
         TriangleList(triangles),
         MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::WHITE))),
         Transform::from_scale(Vec3::splat(10.)).with_translation(Vec3::new(0., 5., 0.)),
@@ -188,7 +188,7 @@ pub fn setup_joints(
     
     commands.spawn_batch(joints);
     
-    let mut joints: Vec<EdgeDistanceConstraint> = Vec::new();
+    let mut joints: Vec<DistanceJoint> = Vec::new();
     
     let point_entities = point_entities.iter().collect::<Vec<_>>();
     
@@ -206,7 +206,7 @@ pub fn setup_joints(
                     // let p2 = point_transforms.get(point_entities[j]).unwrap().
                     let rest = (p2 - p1).norm();
                     joints.push(
-                        EdgeDistanceConstraint::new(point_entities[i], point_entities[j])
+                        DistanceJoint::new(point_entities[i], point_entities[j])
                             .with_rest_length(rest)
                             .with_compliance(0.00001)
                     );
@@ -218,4 +218,35 @@ pub fn setup_joints(
     }
 
     commands.spawn_batch(joints);
+}
+
+pub fn update_softbody(
+    // points: Query<&LinearVelocity, With<SoftBodyPoint>>,
+    body: Single<&mut SoftBody>,
+    mut tri_constr: Query<&mut TriAreaConstraint>,
+) {
+
+    // let mut count = 0;
+    // let avg_vel = points.iter().map(|v| v.0).reduce(|a, b| {
+    //     count += 1;
+    //     a + b
+    // }).unwrap() / count as f32;
+    // 
+    // body.into_inner().vel = avg_vel;
+    
+    
+    // let a0 = 0.1;
+    // let ascale = 0.05;
+    // 
+    // tri_constr.iter_mut().for_each(|mut c| {
+    //     c.compliance = a0 / (1. + ascale * avg_vel.norm());
+    // });
+    // 
+    // let a0 = 0.000001;
+    // let ascale = 0.1;
+    // 
+    // dist_constr.iter_mut().for_each(|mut c| {
+    //     c.compliance = a0 / (1. + ascale * avg_vel.norm());
+    // });
+    
 }

@@ -1,5 +1,6 @@
-
+use avian2d::prelude::{LinearVelocity, RigidBody};
 use bevy::prelude::*;
+use crate::common::SoftBodyPoint;
 use crate::input::PlayerInput;
 
 #[derive(Component)]
@@ -37,8 +38,12 @@ pub fn update_player(
     player_input: Res<PlayerInput>,
     time: Res<Time>,
 ) {
+
+
+    
+    // TODO use is_airborne
     if !player_state.is_airborne &&  !player_state.is_jumping &&  player_input.do_jump {
-        info!("starting jump");
+        
         player_state.is_jumping = true; 
     }
     
@@ -47,7 +52,6 @@ pub fn update_player(
     }
 
     if player_state.jump_time > 0.2 {
-        info!("stopping jump");
         player_state.jump_time = 0.0;
         player_state.is_jumping = false;
     }

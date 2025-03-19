@@ -1,4 +1,3 @@
-//! Shows how to create graphics that snap to the pixel grid by rendering to a texture in 2D
 
 mod ui;
 mod softbody;
@@ -27,39 +26,46 @@ use bevy::{
     }, window::WindowResized
 };
 use bevy::ecs::schedule::ScheduleLabel;
-// use crate::constr::{iterative_constraint_solve, TriAreaConstraint};
+use wasm_bindgen::prelude::*;
 
-/// In-game resolution width.
 const RES_WIDTH: u32 = 160;
 
-/// In-game resolution height.
 const RES_HEIGHT: u32 = 90;
 
-macro_rules! repeat_system {
-    ( $z:expr, $count:expr ) => {{
-        // ($z, repeat_system!($x)).chain()
-        let mut result = $z;
-        
-        for _ in 1..$count {
-            result = (result, $z).chain() 
-        }
-        
-        result
-    }};
-}
-fn main() {
+#[wasm_bindgen]
+pub fn run() {
     let mut app = App::new();
+
+    let mut default_plugins =
+        DefaultPlugins
+            .set(ImagePlugin::default_nearest());
+    #[cfg(target_arch = "wasm32")]
+    let default_plugins = default_plugins
+            .set(WindowPlugin {
+                primary_window:
+                Some(Window {
+                    canvas: Some(String::from("#mycanvas")),
+                    fit_canvas_to_parent: true,
+                    resizable: false,
+                    ..default()
+                }),
+                ..default() });
+    #[cfg(not(target_arch = "wasm32"))]
+    let default_plugins = default_plugins
+        .set(WindowPlugin {
+            primary_window:
+            Some(Window {
+                resizable: false,
+                ..default()
+            }),
+            ..default() });
+    
     app
         .add_plugins(
-            DefaultPlugins
-            .set(ImagePlugin::default_nearest())
+            default_plugins
         )
-        .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(PhysicsPlugins::default()
             .with_length_unit(10.)
-            // .set(SolverSchedulePlugin {
-            //
-            // })
         )
         // .add_plugins(PhysicsDebugPlugin::default())
         .add_systems(Startup, start_loading)
@@ -70,55 +76,25 @@ fn main() {
         .add_systems(OnEnter(GameState::InGame),
                      (setup_joints,).chain())
         .add_systems(Update,
-                     (fit_canvas, update_ui, update_input, update_player, update_mesh, update_movement).chain().run_if(in_state(GameState::InGame)))
+                     (fit_canvas, update_ui, update_input, update_player, update_softbody, update_mesh, update_movement).chain().run_if(in_state(GameState::InGame)))
         .init_state::<GameState>()
         .insert_resource(Gravity(Vec2::NEG_Y * 100.0));
-        // .run();
 
     app
         .get_schedule_mut(SubstepSchedule)
         .unwrap()
-        // .configure_sets(
-        //     (
-        //
-        //         )
-        // )
-        // .configure_sets(
-        //     (
-        //         Integration
-        //     ).chain()
-        // )
-        // .configure_sets(
-        //
-        // )
+
         .add_systems(
             (
-                iterative_constraint_begin::<TriAreaConstraint, 3>,
-                iterative_constraint_begin::<EdgeDistanceConstraint, 2>,
-                repeat_system!(
-                    (
-                        iterative_constraint_solve::<TriAreaConstraint, 3>,
-                        iterative_constraint_solve::<EdgeDistanceConstraint, 2>,
-                    ).chain(),
-                    1
-                )
+
+                solve_constraint::<TriAreaConstraint, 3>
             ).chain().in_set(SubstepSolverSet::SolveUserConstraints)
         )
-        ;
-
-    // app.add_schedule()
-    // app.init_schedule(IterationSchedule);
-
+    ;
 
     app.run();
-    
+
 }
-
-
-// trait RepeatingSystem<M>: IntoSystemConfigs<M> {
-//     fn repeat(self, num: usize) -> Self {
-//     }
-// }
 
 
 
@@ -151,7 +127,6 @@ enum GameState {
 fn start_loading(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    // mut state: ResMut<NextState<GameState>>,
 ) {
     info!("start_loading");
     let x = asset_server.load("gltf/circle.glb");
@@ -172,13 +147,13 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let rect = Rectangle::new(160.0, 10.0);// .mesh().build();
-    let circle = Circle::new(5.0);// .mesh().build();
-    
-    let bot = Transform::from_translation(-40. * Vec3::Y);
-    let top = Transform::from_translation(40. * Vec3::Y);
-    let left = Transform::from_translation(-75.* Vec3::X).with_rotation(Quat::from(Rotation::degrees(90.)));
-    let right = Transform::from_translation(75.* Vec3::X).with_rotation(Quat::from(Rotation::degrees(90.)));
+    let rect = Rectangle::new(160.0, 20.0);
+    let circle = Circle::new(5.0);
+
+    let bot = Transform::from_translation(-45. * Vec3::Y);
+    let top = Transform::from_translation(45. * Vec3::Y);
+    let left = Transform::from_translation(-80.* Vec3::X).with_rotation(Quat::from(Rotation::degrees(90.)));
+    let right = Transform::from_translation(80.* Vec3::X).with_rotation(Quat::from(Rotation::degrees(90.)));
 
     for t in [bot, top, left, right] {
         commands.spawn((
@@ -188,7 +163,6 @@ fn setup_scene(
             rect.collider(),
             Mesh2d(meshes.add(rect)),
             CollisionLayers::new(GameLayer::default(), GameLayer::all_bits()),
-            // Collider::rectangle(100., 10.),
         ));
     }
     commands.spawn((
@@ -198,8 +172,6 @@ fn setup_scene(
 
         circle.collider(),
         Mesh2d(meshes.add(circle)),
-        // CollisionLayers::new(GameLayer::default(), GameLayer::default()),
-        // Collider::rectangle(100., 10.),
     ));
 
     commands.spawn((
@@ -208,10 +180,6 @@ fn setup_scene(
     ));
 }
 
-
-
-// fn setup_sim(mut commands: Commands) {
-// }
 
 
 fn update_mesh(
@@ -240,14 +208,11 @@ fn update_mesh(
     });
 }
 fn update_loading(
-    // mut commands: Commands,
     asset_server: Res<AssetServer>,
     scene: Res<GameScene>,
     mut next_state: ResMut<NextState<GameState>>
 ) {
-    // info!("update_loading");
     let state = asset_server.load_state(scene.id());
-    // info!("{state:?}");
 
     if asset_server.is_loaded(scene.id()) {
         info!("Loaded scene");
@@ -259,12 +224,12 @@ fn update_loading(
 }
 
 fn fit_canvas(
-    mut resize_events: EventReader<WindowResized>,
     mut projection: Single<&mut OrthographicProjection, With<OuterCamera>>,
+    window: Single<&Window>,
+    mut uiscale: ResMut<UiScale>,
 ) {
-    for event in resize_events.read() {
-        let h_scale = event.width / RES_WIDTH as f32;
-        let v_scale = event.height / RES_HEIGHT as f32;
-        projection.scale = 1. / h_scale.min(v_scale).round();
-    }
+    let h_scale = window.width() / RES_WIDTH as f32;
+    let v_scale = window.height() / RES_HEIGHT as f32;
+    projection.scale = 1. / h_scale.min(v_scale).round();
+    uiscale.0 = 6. * v_scale;
 }

@@ -12,7 +12,7 @@ pub fn setup_movement (
 
 pub fn update_movement (
     player: Single<(&PlayerState, &PlayerConfig)>,
-    mut points: Query<(&mut ExternalForce, &Mass), With<SoftBodyPoint>>,
+    mut points: Query<(&mut ExternalImpulse, &ComputedMass), With<SoftBodyPoint>>,
     // mut point_forces: Query<&mut mass, With<SoftBodyPoint>>
     time: Res<Time>,
     grav: Res<Gravity>
@@ -21,12 +21,13 @@ pub fn update_movement (
     
     let grav_acc = grav.into_inner().0;
     if state.is_jumping {
-        points.iter_mut().for_each(|(mut force, mass)| {
-            let desired_accel = -2. * grav_acc;
-            let needed_force = desired_accel * mass.0;
+        points.iter_mut().for_each(|(mut impulse, mass)| {
+            let desired_accel = -4. * grav_acc;
+            let needed_force = desired_accel * (1./mass.inverse());
+            let needed_impulse = needed_force * time.delta_secs();
             
-            // is cleared every frame
-            force.apply_force(needed_force);
+            impulse.apply_impulse(needed_impulse);
+            
         })
     } else {
     }

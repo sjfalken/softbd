@@ -24,14 +24,21 @@ pub fn setup_input(mut commands: Commands) {
 
 pub fn update_input(
     mut player_input: ResMut<PlayerInput>,
-    keyboard: Res<ButtonInput<KeyCode>>
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut touches: ResMut<Touches>
 ) {
-    // player_input.jump_elapsed += time.delta_secs();
-    if keyboard.pressed(KeyCode::Space) {
+
+
+    let touch_count = touches.iter().count();
+    
+    if keyboard.pressed(KeyCode::Space) || touch_count > 0 || mouse.pressed(MouseButton::Left) {
         player_input.do_jump = true;
     } else {
         player_input.do_jump = false;
     }
+    
+    touches.clear();
 }
     
 
