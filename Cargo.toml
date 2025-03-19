@@ -9,8 +9,8 @@ avian2d = "0.2.1"
 bevy-inspector-egui = "0.30.0"
 wasm-bindgen = "0.2"
 
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+#[package.metadata.wasm-pack.profile.release]
+#wasm-opt = false
 
 [profile.release]
 opt-level = 3

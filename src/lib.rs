@@ -39,6 +39,7 @@ pub fn run() {
             .set(ImagePlugin::default_nearest());
     #[cfg(target_arch = "wasm32")]
     let default_plugins = default_plugins
+            .set(AssetPlugin {file_path: String::from("/assets"), ..default()})
             .set(WindowPlugin {
                 primary_window:
                 Some(Window {
@@ -70,7 +71,7 @@ pub fn run() {
         .add_systems(Update,
                      (update_loading).run_if(in_state(GameState::Loading)))
         .add_systems(OnEnter(GameState::Setup),
-                     (setup_ui, setup_softbody, setup_scene, setup_input, setup_player, setup_finish).chain())
+                     (setup_ui, setup_scene, fit_canvas, setup_softbody, setup_input, setup_player, setup_finish).chain())
         .add_systems(OnEnter(GameState::InGame),
                      (setup_joints,).chain())
         .add_systems(Update,
@@ -94,23 +95,8 @@ pub fn run() {
 
 }
 
-
-
-
-#[derive(SystemSet, Clone, Hash, PartialEq, Eq, Debug)]
-enum IterationSolverSet {
-    SolveDistance,
-    SolveArea,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, ScheduleLabel)]
-struct IterationSchedule;
-
 #[derive(Component)]
 struct OuterCamera;
-
-
-
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
 enum GameState {
