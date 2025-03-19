@@ -17,13 +17,11 @@ use input::*;
 use player::*;
 
 use avian2d::dynamics::solver::xpbd::solve_constraint;
-use avian2d::parry::simba::scalar::SupersetOf;
 use avian2d::prelude::*;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::{
     prelude::*, render::{
         mesh::VertexAttributeValues,
-    }, window::WindowResized
+    }
 };
 use bevy::ecs::schedule::ScheduleLabel;
 use wasm_bindgen::prelude::*;
@@ -36,7 +34,7 @@ const RES_HEIGHT: u32 = 90;
 pub fn run() {
     let mut app = App::new();
 
-    let mut default_plugins =
+    let default_plugins =
         DefaultPlugins
             .set(ImagePlugin::default_nearest());
     #[cfg(target_arch = "wasm32")]

@@ -1,16 +1,11 @@
 use avian2d::dynamics::solver::xpbd::{AngularConstraint, PositionConstraint, XpbdConstraint};
-use avian2d::math::{Matrix3, Quaternion, Scalar, Vector};
+use avian2d::math::{Scalar, Vector};
 use avian2d::prelude::*;
 use bevy::{
-    ecs::{
-        entity::{EntityMapper, MapEntities},
-        reflect::ReflectMapEntities,
-    },
+    ecs::entity::{EntityMapper, MapEntities},
     prelude::*,
 };
 use bevy::math::NormedVectorSpace;
-use bevy::reflect::Tuple;
-use bevy::render::render_graph::Edge;
 
 pub fn iterative_constraint_begin<C: XpbdConstraint<ENTITY_COUNT> + Component, const ENTITY_COUNT: usize>(
     // mut commands: Commands,
@@ -184,7 +179,7 @@ impl TriAreaConstraint {
         let g = [grad_area1, grad_area2, grad_area3];
         
         let g_dir_and_len = |gi: Vector| {
-            if (gi.length() < Scalar::EPSILON) {
+            if gi.length() < Scalar::EPSILON {
                 (Vector::ZERO, 0.0)
             } else {
                 (gi.normalize(), gi.norm())

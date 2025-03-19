@@ -1,6 +1,4 @@
-use avian2d::prelude::{LinearVelocity, RigidBody};
 use bevy::prelude::*;
-use crate::common::SoftBodyPoint;
 use crate::input::PlayerInput;
 
 #[derive(Component)]

@@ -1,10 +1,8 @@
 use avian2d::collision::{Collider, CollisionLayers};
-use avian2d::dynamics::solver::xpbd::{AngularConstraint, PositionConstraint, XpbdConstraint};
-use avian2d::math::{Scalar, Vector};
+use avian2d::math::Vector;
 use avian2d::prelude::*;
 use bevy::asset::Assets;
 use bevy::color::Color;
-use bevy::ecs::entity::MapEntities;
 use bevy::gltf::{Gltf, GltfMesh};
 use bevy::math::{NormedVectorSpace, Vec3};
 use bevy::prelude::*;
@@ -223,7 +221,7 @@ pub fn setup_joints(
 pub fn update_softbody(
     // points: Query<&LinearVelocity, With<SoftBodyPoint>>,
     body: Single<&mut SoftBody>,
-    mut tri_constr: Query<&mut TriAreaConstraint>,
+    tri_constr: Query<&mut TriAreaConstraint>,
 ) {
 
     // let mut count = 0;

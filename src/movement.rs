@@ -1,11 +1,10 @@
-use avian2d::math::Vector;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 use crate::common::*;
 use crate::player::{PlayerConfig, PlayerState};
 
 pub fn setup_movement (
-    mut commands: Commands,
+    commands: Commands,
 ) {
 
 }
