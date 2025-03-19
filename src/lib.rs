@@ -23,7 +23,6 @@ use bevy::{
         mesh::VertexAttributeValues,
     }
 };
-use bevy::ecs::schedule::ScheduleLabel;
 use wasm_bindgen::prelude::*;
 
 const RES_WIDTH: u32 = 160;
