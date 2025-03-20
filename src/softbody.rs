@@ -10,7 +10,7 @@ use bevy::render::mesh::{Indices, VertexAttributeValues};
 
 use crate::common::*;
 use crate::constr::TriAreaConstraint;
-
+use crate::SceneEvent;
 
 const VERTEX_EPS: f32 = 0.005;
 #[derive(Deref, DerefMut)]
@@ -219,32 +219,23 @@ pub fn setup_joints(
 }
 
 pub fn update_softbody(
-    // points: Query<&LinearVelocity, With<SoftBodyPoint>>,
-    body: Single<&mut SoftBody>,
-    tri_constr: Query<&mut TriAreaConstraint>,
+    mut points: Query<(&GlobalTransform, &mut Transform), (With<SoftBodyPoint>, Without<SoftBody>)>,
+    mut body: Single<&mut Transform, (With<SoftBody>, Without<SoftBodyPoint>)>,
 ) {
+    let mut local_centroid = Vec3::ZERO;
+    let mut global_centroid = Vec3::ZERO;
+    for (global, local) in points.iter() {
+        local_centroid += local.translation;
+        global_centroid += global.translation();
+    }
+    
+    local_centroid = local_centroid / points.iter().count() as f32;
+    global_centroid = global_centroid / points.iter().count() as f32;
 
-    // let mut count = 0;
-    // let avg_vel = points.iter().map(|v| v.0).reduce(|a, b| {
-    //     count += 1;
-    //     a + b
-    // }).unwrap() / count as f32;
-    // 
-    // body.into_inner().vel = avg_vel;
+    body.translation = global_centroid;
     
-    
-    // let a0 = 0.1;
-    // let ascale = 0.05;
-    // 
-    // tri_constr.iter_mut().for_each(|mut c| {
-    //     c.compliance = a0 / (1. + ascale * avg_vel.norm());
-    // });
-    // 
-    // let a0 = 0.000001;
-    // let ascale = 0.1;
-    // 
-    // dist_constr.iter_mut().for_each(|mut c| {
-    //     c.compliance = a0 / (1. + ascale * avg_vel.norm());
-    // });
+    for (_, mut local) in points.iter_mut() {
+        local.translation -= local_centroid;
+    }
     
 }
